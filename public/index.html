@@ -1,5 +1,86 @@
 <!DOCTYPE html>
-<html>
-  <head><title>Buy More</title></head>
-  <body><h1>Buy More</h1></body>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Buy More</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+    h1 { border-bottom: 2px solid #1a1a1a; padding-bottom: 12px; }
+    .product { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #eee; }
+    button { background: #1a1a1a; color: #fff; border: 0; padding: 10px 16px; cursor: pointer; border-radius: 4px; }
+    button:disabled { background: #999; cursor: not-allowed; }
+    #cart { margin-top: 32px; padding: 20px; background: #f7f7f7; border-radius: 6px; }
+    .cart-line { display: flex; justify-content: space-between; padding: 4px 0; }
+    .total { font-weight: 700; border-top: 1px solid #ddd; margin-top: 12px; padding-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Buy More</h1>
+
+  <div id="products">Loading products…</div>
+
+  <div id="cart">
+    <h2>Your cart</h2>
+    <div id="cart-lines">Your cart is empty.</div>
+    <button id="checkout-btn" disabled>Proceed to checkout</button>
+  </div>
+
+<script>
+  let catalogue = [];
+  const cart = [];
+
+  const formatAUD = (cents) => 'A$' + (cents / 100).toFixed(2);
+
+  async function loadProducts() {
+    const res = await fetch('/api/products');
+    catalogue = await res.json();
+    renderProducts();
+  }
+
+  function renderProducts() {
+    document.getElementById('products').innerHTML = catalogue.map(p => `
+      <div class="product">
+        <span>${p.name} — ${formatAUD(p.price)}</span>
+        <button onclick="addToCart('${p.id}')">Add to cart</button>
+      </div>
+    `).join('');
+  }
+
+  function addToCart(id) {
+    const product = catalogue.find(p => p.id === id);
+    const existing = cart.find(line => line.id === id);
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      cart.push({ ...product, quantity: 1 });
+    }
+    renderCart();
+  }
+
+  function cartTotal() {
+    return cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
+  }
+
+  function renderCart() {
+    const lines = document.getElementById('cart-lines');
+    if (cart.length === 0) {
+      lines.innerHTML = 'Your cart is empty.';
+      document.getElementById('checkout-btn').disabled = true;
+      return;
+    }
+    lines.innerHTML = cart.map(line => `
+      <div class="cart-line">
+        <span>${line.name} × ${line.quantity}</span>
+        <span>${formatAUD(line.price * line.quantity)}</span>
+      </div>
+    `).join('') + `
+      <div class="cart-line total">
+        <span>Total</span><span>${formatAUD(cartTotal())}</span>
+      </div>`;
+    document.getElementById('checkout-btn').disabled = false;
+  }
+
+  loadProducts();
+</script>
+</body>
 </html>
