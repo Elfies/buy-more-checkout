@@ -13,6 +13,8 @@
     .cart-line { display: flex; justify-content: space-between; padding: 4px 0; }
     .total { font-weight: 700; border-top: 1px solid #ddd; margin-top: 12px; padding-top: 12px; }
   </style>
+<link rel="stylesheet" href="https://sdk.primer.io/web/v2.0.0/Checkout.css" />
+<script src="https://sdk.primer.io/web/v2.0.0/Primer.min.js" integrity="sha384-yUCj6Q8h0Q6zFc35iT7v7pFoqlgpBD/xVr5SQxOgAnu2Cq286mf7IAyrFBJ8OsIa" crossorigin="anonymous"></script>
 </head>
 <body>
   <h1>Buy More</h1>
@@ -25,6 +27,12 @@
     <button id="checkout-btn" disabled>Proceed to checkout</button>
   </div>
 
+  <div id="checkout-section" style="display:none">
+    <h2>Payment</h2>
+    <div id="checkout-container"></div>
+  </div>
+
+  <div id="result"></div>
 <script>
   let catalogue = [];
   const cart = [];
@@ -80,6 +88,60 @@
     document.getElementById('checkout-btn').disabled = false;
   }
 
+  document.getElementById('checkout-btn').addEventListener('click', startCheckout);
+
+async function startCheckout() {
+  const btn = document.getElementById('checkout-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting checkout…';
+
+  try {
+    const res = await fetch('/api/client-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: cart.map(line => ({ id: line.id, quantity: line.quantity }))
+      })
+    });
+
+    if (!res.ok) throw new Error('Client session request failed');
+    const { clientToken } = await res.json();
+
+    document.getElementById('checkout-section').style.display = 'block';
+
+    await Primer.showUniversalCheckout(clientToken, {
+      container: '#checkout-container',
+      onCheckoutComplete({ payment }) {
+        showResult(true, payment);
+      },
+      onCheckoutFail(error, data, handler) {
+        console.error('Checkout failed:', error);
+        showResult(false, null);
+        if (handler) handler.showErrorMessage();
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    btn.disabled = false;
+    btn.textContent = 'Proceed to checkout';
+    document.getElementById('result').innerHTML =
+      '<p>Sorry — we could not start the checkout. Please try again.</p>';
+  }
+}
+
+function showResult(success, payment) {
+  document.getElementById('products').style.display = 'none';
+  document.getElementById('cart').style.display = 'none';
+  document.getElementById('checkout-section').style.display = 'none';
+
+  document.getElementById('result').innerHTML = success
+    ? `<h2>Thank you for your order</h2>
+       <p>Your payment was successful.</p>
+       <p>Order reference: ${payment?.orderId ?? '—'}</p>`
+    : `<h2>Payment unsuccessful</h2>
+       <p>Your payment could not be completed and you have not been charged.</p>
+       <button onclick="location.reload()">Try again</button>`;
+}
   loadProducts();
 </script>
 </body>
