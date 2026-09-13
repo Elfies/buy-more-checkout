@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const products = require('./products');
 
+const ALLOWED_COUNTRIES = ['AU', 'GB', 'DE', 'SG', 'US'];
+
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
@@ -11,10 +13,14 @@ app.get('/api/products', (req, res) => {
 });
 
 app.post('/api/client-session', async (req, res) => {
-  const { items } = req.body;
+  const { items, countryCode } = req.body;
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
+  }
+
+  if (!ALLOWED_COUNTRIES.includes(countryCode)) {
+    return res.status(400).json({ error: 'Unsupported shopper country' });
   }
 
   const lineItems = [];
@@ -46,7 +52,7 @@ app.post('/api/client-session', async (req, res) => {
         orderId,
         currencyCode: 'AUD',
         amount,
-        order: { lineItems, countryCode: 'AU' }
+        order: { lineItems, countryCode }
       })
     });
 

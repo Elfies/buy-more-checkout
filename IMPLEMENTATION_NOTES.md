@@ -36,6 +36,15 @@ total itself. If the amount came from the client, anyone could edit it in dev to
 and buy a A$149 item for one cent. Orchestration does not protect against this — it
 remains the merchant's responsibility either way.
 
+**Shopper country is selected at checkout and validated server-side.** The checkout 
+offers Buy More's five markets (AU, GB, DE, SG, US) and the selection is passed to the 
+client session as `countryCode`. The server validates it against a fixed allowlist 
+before use — the same principle as pricing: anything crossing from the browser is 
+untrusted. Country matters beyond the order record, since it is one of the inputs 
+workflow routing conditions can read. Currency remains AUD throughout: supporting 
+additional currencies would require merchant accounts per currency, and an Australian 
+retailer selling cross-border in AUD is a realistic model.
+
 **Card only; PayPal and Klarna deactivated.** Both were active by default in the
 Checkout section. A payment method visible to a shopper but with no configured route
 and no testing behind it is a liability, not a feature. They were switched off.

@@ -85,6 +85,7 @@ server.js          Express server, product endpoint, client session endpoint
 products.js        Hardcoded product catalogue (prices in minor units)
 public/index.html  Storefront, cart, Drop-in mount point, result states
 .env               API key (gitignored)
+.env.example        
 ```
 
 ## Testing

@@ -12,6 +12,8 @@
     #cart { margin-top: 32px; padding: 20px; background: #f7f7f7; border-radius: 6px; }
     .cart-line { display: flex; justify-content: space-between; padding: 4px 0; }
     .total { font-weight: 700; border-top: 1px solid #ddd; margin-top: 12px; padding-top: 12px; }
+    label { display: block; margin-top: 16px; font-size: 14px; }
+    select { padding: 8px; margin: 6px 0 16px; border-radius: 4px; border: 1px solid #ccc; width: 100%; }
   </style>
 <link rel="stylesheet" href="https://sdk.primer.io/web/v2.0.0/Checkout.css" />
 <script src="https://sdk.primer.io/web/v2.0.0/Primer.min.js" integrity="sha384-yUCj6Q8h0Q6zFc35iT7v7pFoqlgpBD/xVr5SQxOgAnu2Cq286mf7IAyrFBJ8OsIa" crossorigin="anonymous"></script>
@@ -24,6 +26,16 @@
   <div id="cart">
     <h2>Your cart</h2>
     <div id="cart-lines">Your cart is empty.</div>
+
+    <label for="country">Deliver to</label>
+    <select id="country">
+      <option value="AU" selected>Australia</option>
+      <option value="GB">United Kingdom</option>
+      <option value="DE">Germany</option>
+      <option value="SG">Singapore</option>
+      <option value="US">United States</option>
+    </select>
+
     <button id="checkout-btn" disabled>Proceed to checkout</button>
   </div>
 
@@ -100,8 +112,9 @@ async function startCheckout() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        items: cart.map(line => ({ id: line.id, quantity: line.quantity }))
-      })
+          items: cart.map(line => ({ id: line.id, quantity: line.quantity })),
+          countryCode: document.getElementById('country').value
+        })
     });
 
     if (!res.ok) throw new Error('Client session request failed');
