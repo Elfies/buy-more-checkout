@@ -54,20 +54,29 @@ checkout with no frontend change required. Adding a payment method here is dashb
 configuration plus workflow routing plus testing — not a new client-side integration
 per method per store.
 
-**No 3D Secure, no auto-capture configuration.** Both were available on the Authorize
-payment block. 3DS adds an authentication step that is not required for a sandbox card
-payment and would have complicated the demo. Auto-capture configuration was left off,
-which is coherent with keeping the "Continue payment flow" block that signals the end
-of the payment attempt. Both are scope decisions, not oversights.
+**No 3D Secure; auto-capture configuration left off.** Both were available on the
+Authorize payment block. 3DS adds an authentication step not required for a sandbox
+card payment, and would be a requirement rather than an option in the UK and Germany,
+both of which are SCA jurisdictions and both of which are Buy More growth markets — so
+I would enable and test it per market rather than globally.
+
+With auto-capture configuration off, payments reach `AUTHORIZED` and are not captured,
+confirmed by observing the payment status in both dashboards after a successful test.
+For a retailer that is often the desired behaviour, since capture usually belongs at
+dispatch rather than checkout. It is a decision to make deliberately rather than a
+default to inherit.
 
 **Workflow action version updates deferred.** The workflow editor offered an optional
 version bump on the Primer Payments actions. Taking a version change partway through a
 build, on a deadline, adds an unknown for no benefit. Noted and left.
 
-**Least-privilege API key.** Scoped to `client_tokens:write` and `transactions:read`.
-A leaked key with those scopes can create checkout sessions and read payment status —
-it cannot refund or capture money. (Primer's Drop-in documentation also lists
-`transactions:authorize`, which I would include on the working key.)
+**Least-privilege API key — intended, not achieved.** I selected `client_tokens:write`
+and `transactions:read` when attempting to create a key, reasoning that a leaked key
+with those scopes could create checkout sessions and read payment status but could not
+refund or capture money. The Dashboard would not create the key (see below), so the
+prototype runs on a key Primer supplied, whose scopes I do not know. Primer's Drop-in
+documentation also lists `transactions:authorize`, which I would include. Confirming the
+scopes on a working key is outstanding.
 
 **Secrets never touch the repository.** `.gitignore` was committed as the first commit
 in the repository, before any `.env` file existed, so there is no window in which a key
@@ -93,34 +102,43 @@ endpoint from the build.
 logged on the server; the browser receives "we could not start the checkout". API error
 detail should not be exposed to a page.
 
-## The blocker
+## Access problems, and a diagnosis I got partly wrong
 
-Requests to `POST https://api.sandbox.primer.io/client-session` return
-`403 SecurityPolicyBlock`. The response headers show `server: CloudFront` and
-`x-cache: Error from cloudfront`, meaning the request is rejected at the CDN edge
-before reaching Primer's API.
+Requests to `POST https://api.sandbox.primer.io/client-session` returned
+`403 SecurityPolicyBlock`, with response headers showing `server: CloudFront` and
+`x-cache: Error from cloudfront` — the rejection came from the CDN, not from Primer's
+application. Separately, creating an API key in the Dashboard failed, with the dialog
+reporting that no permission was selected when permissions were selected.
 
-How I isolated it:
+How I narrowed it:
 
-1. Reproduced with an empty key, an invalid key, and a well-formed key — identical
-   response each time. An authentication problem would return 401, and the error would
-   differ between those cases. It did not, so authentication is not being evaluated.
-2. Reproduced via `curl` directly against the API, ruling out the application code.
-3. Reproduced on home broadband and on a mobile hotspot — different IPs, different
-   networks, identical response. Not local.
-4. Noted that API key creation in the Dashboard fails in a similar way: the form
-   reports no permission selected when permissions are selected, across multiple scope
-   combinations, key names, a hard refresh, and an incognito window.
+1. Reproduced via `curl` directly against the API, bypassing my application — same
+   result, so my code was not involved.
+2. Sent a well-formed key, an invalid key, and no key — identical responses each time.
+3. Reproduced on home broadband and on a mobile hotspot — different IPs and networks,
+   identical response, so not local to my connection.
 
-Two security-policy-shaped failures on the same sandbox within the same hour is more
-likely one cause than two. Escalated to Primer with CloudFront request IDs and
-timestamps so the specific requests can be found in their logs.
+Steps 1 and 3 were sound and their conclusions held. Step 2 is where I went wrong. I
+reasoned that identical responses across all three key states meant authentication was
+never being evaluated, because an authentication failure returns 401. Primer then
+supplied a working API key, and the same request succeeded immediately.
 
-One useful diagnostic I identified but did not need: Primer's sandbox provisions a
-Primer test processor by default. Routing the workflow to it temporarily would isolate
-whether a payment failure lies in the Braintree connection or upstream in the client
-session. That bisection was unnecessary here, since the failure occurs before any
-payment is created.
+So authentication *was* being evaluated — at the edge, returning 403 rather than the
+401 I expected. My test was reasonable; my inference from it was not. I had no valid
+key to compare against, which is precisely the comparison that would have falsified it,
+and I treated an absence of evidence as evidence.
+
+What I would do differently: treat a 403 from a CDN as a possible authentication
+outcome rather than assuming 401 is the only signal, and state the conclusion as a
+hypothesis with a named test that would disprove it, rather than as a finding.
+
+The Dashboard key creation failure remains unresolved and is still worth investigating,
+since a merchant's team would hit it on day one.
+
+One diagnostic I identified but did not need: Primer's sandbox provisions a test
+processor by default, and routing the workflow to it would isolate whether a payment
+failure sits in the Braintree connection or upstream. Unnecessary here, since the 
+requests were failing authentication rather than processing.
 
 ## Dashboard observations
 
@@ -134,33 +152,28 @@ rather than by anything being genuinely misconfigured:
 - The API key creation dialog's validation message persisted regardless of checkbox
   state (unresolved — see above).
 
-Neither is a complaint. Both are the kind of thing worth knowing when supporting a
-customer through their first integration, because the surface symptom points away from
-the real cause.
-
 ## What I would do next
 
 In rough priority order:
 
-1. Complete the test matrix in the README once API access is restored — successful
-   payment and declined payment, verified in both the Primer and Braintree dashboards.
-2. Webhooks. The client session carries an `orderId`, and payment status updates arrive
+1. Webhooks. The client session carries an `orderId`, and payment status updates arrive
    via webhook. Any real store needs this: the browser closing mid-payment must not
    mean the order is lost.
-3. Persist orders server-side. Currently there is no record of an order beyond the
+2. Persist orders server-side. Currently there is no record of an order beyond the
    payment itself.
-4. Fallback processor. The Authorize payment block supports one directly. With a single
+3. Fallback processor. The Authorize payment block supports one directly. With a single
    processor per store today, a processor outage in a market is an outage for that
    market's store.
-5. A second payment method, to demonstrate that the cost is configuration and routing
+4. A second payment method, to demonstrate that the cost is configuration and routing
    rather than a client-side rebuild.
-6. Currency-based routing, which is directly relevant to consolidating separate
+5. Currency-based routing, which is directly relevant to consolidating separate
    regional stores while retaining per-market behaviour.
 
 ## Questions for Primer
 
-- What is causing the `SecurityPolicyBlock` on this sandbox, and is it related to the
-  API key creation failure?
+- The Dashboard would not let me create an API key — the permission validation failed
+  regardless of what was selected. The `SecurityPolicyBlock` resolved once a key was
+  supplied, but key creation itself is still broken. Is this specific to my sandbox?
 - For a merchant consolidating several market-specific PSP integrations, what does a
   typical migration sequence look like — market by market, or payment method by
   payment method? What tends to go wrong?

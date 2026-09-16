@@ -9,28 +9,18 @@ cart, checks out, and sees a clear outcome whether the payment succeeds or fails
 
 ## Current status
 
-The integration is complete and the storefront works end to end locally. **Payments
-cannot currently be completed** because requests to Primer's sandbox API are being
-rejected at the network edge before authentication:
+Complete and working end to end. A card payment has been processed successfully
+through Primer to Braintree in AUD, verified in both the Primer and Braintree
+dashboards, and a declined payment has been verified through the same path.
 
-```
-POST https://api.sandbox.primer.io/client-session
-→ HTTP 403  {"error":{"errorId":"SecurityPolicyBlock", ...}}
-   server: CloudFront
-```
+Payments are created with status `AUTHORIZED` — funds are reserved but not captured.
+This is the current behaviour with auto-capture configuration left off, and is a
+reasonable default for a retailer, where capture typically happens at dispatch rather
+than at checkout.
 
-The same response is returned with a well-formed API key, an invalid key, and no key
-at all, and was reproduced on two separate networks. Creating an API key in the Primer
-Dashboard also fails, with the dialog reporting that no permission is selected when
-permissions are in fact selected. Both failures look like account or policy
-configuration rather than credentials. This has been raised with Primer, including
-CloudFront request IDs.
-
-See `IMPLEMENTATION_NOTES.md` for the full diagnostic trail.
-
-Everything downstream of obtaining a client token is built but has not been exercised
-against a live payment. That is stated plainly rather than glossed over: an untested
-payment path is not a working payment path.
+Note on access: the sandbox API returned `403 SecurityPolicyBlock` from CloudFront for
+all requests until Primer supplied a working API key, and creating an API key through
+the Dashboard still fails. See `IMPLEMENTATION_NOTES.md`.
 
 ## What works
 
@@ -39,8 +29,8 @@ payment path is not a working payment path.
 - Client session request built server-side from the server's own catalogue
 - Drop-in mounted on a successful client session
 - Success and failure result states
-- Graceful handling when the client session request fails (currently exercised by the
-  403 above)
+- Shopper country selection across Buy More's five markets, validated server-side
+- Graceful handling when the client session request fails
 
 ## Running it locally
 
@@ -76,28 +66,35 @@ payment path existed before the application tried to use it.
 | Workflow | "Accept all card payments", published |
 | Workflow routing | Payment created → Authorize payment (Braintree / AUD) → Continue payment flow |
 | 3D Secure | Not enabled |
-| API key scopes | `client_tokens:write`, `transactions:read` (`transactions:authorize` also required per Drop-in docs) |
+| API key | Supplied by Primer after Dashboard key creation failed; scopes unknown. Drop-in docs list `client_tokens:write` and `transactions:authorize`. |
+
+Shopper country is selected at checkout from Buy More's five markets (AU, GB, DE, SG,
+US) and validated server-side against a fixed allowlist. Currency remains AUD
+throughout — an Australian retailer selling cross-border in AUD is a realistic model,
+and supporting further currencies would require additional merchant accounts.
 
 ## Project structure
 
 ```
-server.js          Express server, product endpoint, client session endpoint
-products.js        Hardcoded product catalogue (prices in minor units)
-public/index.html  Storefront, cart, Drop-in mount point, result states
-.env               API key (gitignored)
-.env.example        
+server.js            Express server, product endpoint, client session endpoint
+products.js          Hardcoded product catalogue (prices in minor units)
+public/index.html    Storefront, cart, country selector, Drop-in mount, result states
+.env                 API key (gitignored, never committed)
+.env.example         Template showing required variables, with blank values
+.gitignore           Excludes .env and node_modules
+IMPLEMENTATION_NOTES.md   Decisions, reasoning, and what I would do next    
 ```
 
 ## Testing
 
-Once API access is restored, the intended test matrix is:
+| Case | Expected | Status |
+|---|---|---|
+| Successful card payment | Confirmation with order reference; payment visible in Primer and Braintree | Verified |
+| Declined card (A$2,000 triggers a Braintree sandbox decline) | Failure message, no charge, retry available | Verified |
+| Empty cart | Checkout blocked before any Primer call | Verified |
+| Unknown product ID posted directly | Rejected server-side | Verified |
+| Unsupported shopper country | Rejected server-side | Verified |
+| Client session failure | Generic error shown, full detail logged server-side | Verified |
 
-| Case | Expected |
-|---|---|
-| Successful card payment | Confirmation with order reference; payment visible in Primer Dashboard and Braintree |
-| Declined card | Failure message, no charge, shopper able to retry |
-| Empty cart | Checkout blocked before any Primer call |
-| Unknown product ID posted directly | Rejected server-side |
-| Client session failure | Generic error shown, full detail logged server-side |
-
-Cases 3, 4 and 5 have been verified. Cases 1 and 2 are blocked.
+Braintree's sandbox determines transaction success by amount rather than card number,
+so the decline case uses a A$2,000 order rather than a specific test card.
